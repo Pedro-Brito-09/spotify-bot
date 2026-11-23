@@ -13,11 +13,13 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
+import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
-import { announceRestartDone, pullAndInstall, saveRestartNotice } from './update.js';
+import { announceRestartDone, BOT_DIR, pullAndInstall, saveRestartNotice } from './update.js';
 
 // ---------- Config ----------
-const TOKEN = process.env.DISCORD_TOKEN;
+// TOKEN is accepted too, since that's the name RazzBot's config uses.
+const TOKEN = (process.env.DISCORD_TOKEN || process.env.TOKEN || '').trim();
 // Optional fallback for servers that haven't used /setchannel yet.
 const DEFAULT_CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID || null;
 // Also announce every time the song changes (not only when someone starts listening).
@@ -29,8 +31,8 @@ const ADMIN_USER_ID = '541010558653169667';
 
 if (!TOKEN) {
   console.error(
-    'Missing DISCORD_TOKEN. Copy .env.example to .env and fill it in ' +
-      '(or set it as an environment variable in your hosting panel).',
+    'Missing DISCORD_TOKEN (or TOKEN). Put it in a .env file next to index.js ' +
+      `(looked for ${path.join(BOT_DIR, '.env')}), or set it as an environment variable in your hosting panel.`,
   );
   process.exit(1);
 }
