@@ -3,19 +3,23 @@ import {
   ActivityType,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   Client,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
   InteractionContextType,
   MessageFlags,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
+import { getChannelId, setChannelId } from './channels.js';
 import { announceRestartDone, pullAndInstall, saveRestartNotice } from './update.js';
 
 // ---------- Config ----------
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID;
+// Optional fallback for servers that haven't used /setchannel yet.
+const DEFAULT_CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID || null;
 // Also announce every time the song changes (not only when someone starts listening).
 const ANNOUNCE_ON_TRACK_CHANGE = process.env.ANNOUNCE_ON_TRACK_CHANGE === 'true';
 // Minimum time between two "started listening" announcements for the same user.
@@ -23,10 +27,10 @@ const COOLDOWN_MS = Number(process.env.COOLDOWN_MINUTES ?? 1) * 60_000;
 // The only user allowed to run !restart.
 const ADMIN_USER_ID = '541010558653169667';
 
-if (!TOKEN || !CHANNEL_ID) {
+if (!TOKEN) {
   console.error(
-    'Missing DISCORD_TOKEN or ANNOUNCE_CHANNEL_ID. Copy .env.example to .env and fill it in ' +
-      '(or set them as environment variables in your hosting panel).',
+    'Missing DISCORD_TOKEN. Copy .env.example to .env and fill it in ' +
+      '(or set it as an environment variable in your hosting panel).',
   );
   process.exit(1);
 }
@@ -43,7 +47,7 @@ const client = new Client({
   ],
 });
 
-/** userId -> timestamp of last announcement */
+/** "guildId:userId" -> timestamp of last announcement */
 const lastAnnounced = new Map();
 
 /** Returns the Spotify activity from a presence, if any. */
@@ -128,17 +132,41 @@ const listenAlongCommand = new SlashCommandBuilder()
     o.setName('user').setDescription('Whose music to share (defaults to you)').setRequired(false),
   );
 
+const setChannelCommand = new SlashCommandBuilder()
+  .setName('setchannel')
+  .setDescription('Choose the channel where Spotify listening announcements are posted')
+  .setContexts(InteractionContextType.Guild)
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild) // only people who can manage the server
+  .addChannelOption((o) =>
+    o
+      .setName('channel')
+      .setDescription('Where to post the announcements')
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+      .setRequired(true),
+  );
+
+/** The announcement channel for a server: the one set with /setchannel, else ANNOUNCE_CHANNEL_ID. */
+async function getAnnounceChannel(guild) {
+  const id = getChannelId(guild.id) ?? DEFAULT_CHANNEL_ID;
+  if (!id) return null;
+  const channel = await guild.channels.fetch(id).catch(() => null);
+  // guild.channels only finds channels in this server, so the env fallback can't leak across servers.
+  return channel?.isTextBased() ? channel : null;
+}
+
 // Only slash commands go here; !restart is a prefix command handled in MessageCreate.
 // Registering this list also removes any old /restart left over from earlier versions.
-const COMMANDS = [listenAlongCommand];
+const COMMANDS = [listenAlongCommand, setChannelCommand];
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
-  const channel = await c.channels.fetch(CHANNEL_ID).catch(() => null);
-  if (!channel?.isTextBased()) {
-    console.error(`ANNOUNCE_CHANNEL_ID ${CHANNEL_ID} is not a text channel the bot can see.`);
-  } else {
-    console.log(`Announcing in #${channel.name} (${channel.guild?.name})`);
+  for (const guild of c.guilds.cache.values()) {
+    const channel = await getAnnounceChannel(guild);
+    console.log(
+      channel
+        ? `${guild.name}: announcing in #${channel.name}`
+        : `${guild.name}: no announcement channel yet, use /setchannel`,
+    );
   }
 
   await announceRestartDone(c);
@@ -159,7 +187,39 @@ client.on(Events.GuildCreate, (guild) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'listenalong') return handleListenAlong(interaction);
+  if (interaction.commandName === 'setchannel') return handleSetChannel(interaction);
 });
+
+async function handleSetChannel(interaction) {
+  try {
+    const channel = interaction.options.getChannel('channel', true);
+    const missing = channel
+      .permissionsFor(interaction.guild.members.me)
+      ?.missing([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ]);
+    if (missing?.length) {
+      await interaction.reply({
+        content: `I can't post in <#${channel.id}>. I'm missing: **${missing.join(', ')}**.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    setChannelId(interaction.guildId, channel.id);
+    await interaction.reply({
+      content: `✅ Spotify announcements will now be posted in <#${channel.id}>.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    console.log(`${interaction.guild.name}: announcement channel set to #${channel.name} by ${interaction.user.tag}`);
+  } catch (err) {
+    console.error('Failed to handle /setchannel:', err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+  }
+}
 
 client.on(Events.MessageCreate, async (message) => {
   // Stays silent for everyone except the admin, like RazzBot.
@@ -236,15 +296,15 @@ client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
     // Presence updates fire on pause/seek/etc. Only react to real changes.
     if (!startedListening && !(ANNOUNCE_ON_TRACK_CHANGE && trackChanged)) return;
 
-    const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-    // Only announce members of the server that owns the announcement channel.
-    if (!channel?.isTextBased() || channel.guildId !== newPresence.guild.id) return;
+    const channel = await getAnnounceChannel(newPresence.guild);
+    if (!channel) return; // no channel set for this server
 
+    const cooldownKey = `${newPresence.guild.id}:${member.id}`;
     if (startedListening) {
-      const last = lastAnnounced.get(member.id) ?? 0;
+      const last = lastAnnounced.get(cooldownKey) ?? 0;
       if (Date.now() - last < COOLDOWN_MS) return;
     }
-    lastAnnounced.set(member.id, Date.now());
+    lastAnnounced.set(cooldownKey, Date.now());
 
     await channel.send(buildMessage(member, newSpotify, startedListening ? 'start' : 'change'));
     console.log(`Announced ${member.user.tag}: ${newSpotify.details} - ${newSpotify.state}`);

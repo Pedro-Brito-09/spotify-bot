@@ -16,7 +16,9 @@ Use a Node.js egg/server, Node **20.12 or newer**. In the server's **Startup** t
 | Git Username / Access Token | only if the repo is private |
 
 Then create a `.env` file in `/home/container` with the **File Manager** (same contents as
-`.env.example`, at least `DISCORD_TOKEN` and `ANNOUNCE_CHANNEL_ID`). The bot reads it itself.
+`.env.example`, at least `DISCORD_TOKEN`). The bot reads it itself. Then pick the announcement
+channel in Discord with `/setchannel`; it's saved in `data/channels.json`, which updates don't touch
+(a **Reinstall Server** does wipe it).
 
 If the files were there before you set the Git address, run **Settings → Reinstall Server** so the
 panel clones the repo (back up your `.env` first).
@@ -60,7 +62,6 @@ remote URL), otherwise the boot-time pull fails and the bot keeps running old co
 ```bash
 sudo tee /etc/spotify-bot.env >/dev/null <<'EOF'
 DISCORD_TOKEN=your_discord_bot_token_here
-ANNOUNCE_CHANNEL_ID=your_channel_id_here
 ANNOUNCE_ON_TRACK_CHANGE=false
 COOLDOWN_MINUTES=1
 EOF
