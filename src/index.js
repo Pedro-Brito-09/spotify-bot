@@ -169,6 +169,8 @@ client.once(Events.ClientReady, async (c) => {
         ? `${guild.name}: announcing in #${channel.name}`
         : `${guild.name}: no announcement channel yet, use /setchannel`,
     );
+    // 0 here means presences aren't arriving: Presence Intent is off in the Developer Portal.
+    console.log(`${guild.name}: can see ${guild.presences.cache.size} member presence(s)`);
   }
 
   await announceRestartDone(c);
@@ -257,20 +259,50 @@ async function handleRestart(message) {
   process.exit(1);
 }
 
+/** Explain why the bot can't see Spotify, based on what it does see. */
+function notListeningHelp(you, user, presence) {
+  const who = you ? 'you' : user.username;
+  const activities = presence?.activities ?? [];
+  const seen = activities.map((a) => (a.type === ActivityType.Custom ? 'a custom status' : a.name)).join(', ');
+
+  if (!presence || presence.status === 'offline') {
+    return (
+      `I can't see ${who} online at all, so I can't see Spotify either. Usually this means:
+` +
+      `• ${you ? 'Your' : 'Their'} status is set to **Invisible**, or
+` +
+      `• **Share my activity** is off for this server: right-click the server icon → **Privacy Settings** → turn on **Activity Status**.`
+    );
+  }
+  return (
+    `I can see ${who} as **${presence.status}**${seen ? ` with: ${seen}` : ' with no activity'}, but no Spotify. Check that:
+` +
+    `• **Share my activity** is on for this server: right-click the server icon → **Privacy Settings** → **Activity Status**.
+` +
+    `• Spotify is connected in **Settings → Connections** with **Display Spotify as your status** on.`
+  );
+}
+
 async function handleListenAlong(interaction) {
   try {
     const user = interaction.options.getUser('user') ?? interaction.user;
-    const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-    const spotify = getSpotify(interaction.guild.presences.cache.get(user.id));
+    let member = await interaction.guild.members.fetch(user.id).catch(() => null);
+    let presence = interaction.guild.presences.cache.get(user.id);
+
+    // The cached presence can be missing or stale (e.g. right after the bot starts), so ask Discord.
+    if (!getSpotify(presence)) {
+      const fetched = await interaction.guild.members
+        .fetch({ user: [user.id], withPresences: true, time: 5_000 })
+        .catch(() => null);
+      const fresh = fetched?.get(user.id);
+      if (fresh) member = fresh;
+      presence = fresh?.presence ?? interaction.guild.presences.cache.get(user.id) ?? presence;
+    }
+    const spotify = getSpotify(presence);
 
     if (!member || !spotify) {
-      const who = user.id === interaction.user.id ? "You're" : `${user.username} is`;
-      await interaction.reply({
-        content:
-          `${who} not listening to Spotify right now (or Spotify isn't shown on the profile). ` +
-          'Make sure Spotify is connected in Discord → Settings → Connections with "Display on profile" enabled.',
-        flags: MessageFlags.Ephemeral,
-      });
+      const you = user.id === interaction.user.id;
+      await interaction.reply({ content: notListeningHelp(you, user, presence), flags: MessageFlags.Ephemeral });
       return;
     }
 
