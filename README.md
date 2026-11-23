@@ -40,10 +40,15 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 
 Slash commands are registered in each server when the bot starts or joins, so they show up right away.
 
-## Admin: `!restart`
+## Admin commands
 
-Only Discord user `541010558653169667` can use it; the bot ignores it from anyone else.
-It pulls the latest `master` from GitHub, installs dependencies and restarts the bot, then posts
+Only Discord user `541010558653169667` can use these; the bot ignores them from anyone else.
+
+- `!clearcache` forgets the cooldowns and every saved member status, then asks Discord for
+  everyone's current status again. `/setchannel` choices are kept.
+- `!presence [@user]` shows exactly what Discord sends the bot about someone's status (for
+  debugging when Spotify isn't detected).
+- `!restart` pulls the latest `master` from GitHub, installs dependencies and restarts the bot, then posts
 `✅ Back online on <commit>`. Needs the systemd setup in [DEPLOY.md](DEPLOY.md) to come back up.
 
 ## Running on a server

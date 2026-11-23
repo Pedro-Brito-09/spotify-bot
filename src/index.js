@@ -231,7 +231,44 @@ client.on(Events.MessageCreate, async (message) => {
   const content = message.content.trim();
   if (content === '!restart') return handleRestart(message);
   if (content === '!presence' || content.startsWith('!presence ')) return handlePresenceDebug(message);
+  if (content === '!clearcache') return handleClearCache(message);
 });
+
+/**
+ * !clearcache: forget cooldowns and every cached presence/member, then re-fetch this server's
+ * members with fresh presences from Discord. /setchannel choices are settings, so they stay.
+ */
+async function handleClearCache(message) {
+  const cooldowns = lastAnnounced.size;
+  const rawUpdates = lastRawPresence.size;
+  lastAnnounced.clear();
+  lastRawPresence.clear();
+
+  let presences = 0;
+  let members = 0;
+  for (const guild of client.guilds.cache.values()) {
+    presences += guild.presences.cache.size;
+    members += guild.members.cache.size;
+    guild.presences.cache.clear();
+    // Keep the bot's own member: permission checks (e.g. /setchannel) need it.
+    guild.members.cache.sweep((_member, id) => id !== client.user.id);
+  }
+
+  let refetched = 'not in a server, nothing re-fetched';
+  if (message.guild) {
+    try {
+      const fresh = await message.guild.members.fetch({ withPresences: true, time: 30_000 });
+      refetched = `re-fetched ${fresh.size} member(s), ${message.guild.presences.cache.size} with a visible status`;
+    } catch (err) {
+      refetched = `re-fetch failed: ${err.message}`;
+    }
+  }
+
+  await message.reply(
+    `🧹 Cache cleared: ${cooldowns} cooldown(s), ${presences} presence(s), ${members} member(s), ` +
+      `${rawUpdates} raw update(s).\n${refetched}.`,
+  );
+}
 
 /** userId -> the last raw PRESENCE_UPDATE Discord sent, exactly as received (for !presence). */
 const lastRawPresence = new Map();
