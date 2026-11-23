@@ -34,7 +34,6 @@ DISCORD_TOKEN=your_discord_bot_token_here
 ANNOUNCE_CHANNEL_ID=your_channel_id_here
 ANNOUNCE_ON_TRACK_CHANGE=false
 COOLDOWN_MINUTES=1
-ADMIN_USER_ID=your_discord_user_id
 EOF
 sudo chown root:spotifybot /etc/spotify-bot.env
 sudo chmod 640 /etc/spotify-bot.env
@@ -68,17 +67,18 @@ You want `Logged in as ...` in the log.
 
 Push to `master`, then either:
 
-- **From Discord:** `/restart`. It pulls `master`, runs `npm ci`, and exits; systemd brings it back
+- **From Discord:** `!restart`. It pulls `master`, runs `npm ci`, and exits; systemd brings it back
   and the bot posts `✅ Back online on <commit>` in the same channel. If the pull or install fails,
-  the bot keeps running the old code and posts the error. Only `ADMIN_USER_ID` can run it, and the
-  command is only visible to server administrators.
+  the bot keeps running the old code and posts the error. Only user `541010558653169667` can run it;
+  the bot ignores it from anyone else.
 - **From SSH:** `sudo systemctl restart spotify-bot` (runs the updater first).
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
-| `Used disallowed intents` | Presence Intent or Server Members Intent is off in the Developer Portal |
+| `Used disallowed intents` | Presence, Server Members or Message Content Intent is off in the Developer Portal |
 | `An invalid token was provided` | `DISCORD_TOKEN` is wrong or has quotes around it |
-| `/restart` says `git pull` failed | Local changes in `/opt/spotify-bot`, or no access to a private repo |
-| `/restart` exits but the bot doesn't come back | It isn't running under systemd (e.g. `npm start` by hand) |
+| `!restart` says `git pull` failed | Local changes in `/opt/spotify-bot`, or no access to a private repo |
+| `!restart` does nothing | Message Content Intent is off, or the bot can't see that channel |
+| `!restart` exits but the bot doesn't come back | It isn't running under systemd (e.g. `npm start` by hand) |

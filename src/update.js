@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 export const BOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BRANCH = process.env.UPDATE_BRANCH || 'master';
-// Written just before /restart exits, read on startup to say we're back.
+// Written just before !restart exits, read on startup to say we're back.
 const RESTART_NOTICE_PATH = path.join(BOT_DIR, '.restart_notice.json');
 
 /** Run a command in the bot's folder -> { code, output }. Never throws. */
@@ -78,7 +78,7 @@ export function saveRestartNotice(channelId) {
   }
 }
 
-/** Tell the channel that ran /restart that the new process is up. */
+/** Tell the channel that ran !restart that the new process is up. */
 export async function announceRestartDone(client) {
   let channelId;
   try {

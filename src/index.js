@@ -9,7 +9,6 @@ import {
   GatewayIntentBits,
   InteractionContextType,
   MessageFlags,
-  PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import { announceRestartDone, pullAndInstall, saveRestartNotice } from './update.js';
@@ -21,8 +20,8 @@ const CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID;
 const ANNOUNCE_ON_TRACK_CHANGE = process.env.ANNOUNCE_ON_TRACK_CHANGE === 'true';
 // Minimum time between two "started listening" announcements for the same user.
 const COOLDOWN_MS = Number(process.env.COOLDOWN_MINUTES ?? 1) * 60_000;
-// The only user allowed to run /restart (same admin as RazzBot unless overridden).
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '541010558653169667';
+// The only user allowed to run !restart.
+const ADMIN_USER_ID = '541010558653169667';
 
 if (!TOKEN || !CHANNEL_ID) {
   console.error('Missing DISCORD_TOKEN or ANNOUNCE_CHANNEL_ID. Copy .env.example to .env and fill it in.');
@@ -36,6 +35,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers, // privileged: needed to resolve members
     GatewayIntentBits.GuildPresences, // privileged: needed to see what people are listening to
+    GatewayIntentBits.GuildMessages, // for !restart
+    GatewayIntentBits.MessageContent, // privileged: needed to read "!restart"
   ],
 });
 
@@ -124,14 +125,9 @@ const listenAlongCommand = new SlashCommandBuilder()
     o.setName('user').setDescription('Whose music to share (defaults to you)').setRequired(false),
   );
 
-const restartCommand = new SlashCommandBuilder()
-  .setName('restart')
-  .setDescription('Pull the latest code from GitHub and restart the bot (bot admin only)')
-  .setContexts(InteractionContextType.Guild)
-  // Hidden from everyone except server admins; the handler still checks ADMIN_USER_ID.
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
-
-const COMMANDS = [listenAlongCommand, restartCommand];
+// Only slash commands go here; !restart is a prefix command handled in MessageCreate.
+// Registering this list also removes any old /restart left over from earlier versions.
+const COMMANDS = [listenAlongCommand];
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
@@ -160,29 +156,35 @@ client.on(Events.GuildCreate, (guild) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'listenalong') return handleListenAlong(interaction);
-  if (interaction.commandName === 'restart') return handleRestart(interaction);
 });
 
-/** /restart: pull master, install dependencies, exit. systemd's Restart=always brings the bot back. */
-async function handleRestart(interaction) {
-  if (interaction.user.id !== ADMIN_USER_ID) {
-    await interaction.reply({ content: 'Only the bot admin can do that.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-  await interaction.deferReply();
+client.on(Events.MessageCreate, async (message) => {
+  // Stays silent for everyone except the admin, like RazzBot.
+  if (message.author.id !== ADMIN_USER_ID) return;
+  if (message.content.trim() !== '!restart') return;
+  await handleRestart(message);
+});
+
+/** !restart: pull master, install dependencies, exit. systemd's Restart=always brings the bot back. */
+async function handleRestart(message) {
+  // Typing indicator lasts ~10s, so keep it going while git/npm run.
+  message.channel.sendTyping().catch(() => {});
+  const typing = setInterval(() => message.channel.sendTyping().catch(() => {}), 8_000);
   try {
     const { ok, lines } = await pullAndInstall();
     if (!ok) {
-      await interaction.editReply(lines.join('\n'));
+      await message.reply(lines.join('\n'));
       return;
     }
-    saveRestartNotice(interaction.channelId);
+    saveRestartNotice(message.channelId);
     lines.push('🔄 Restarting...');
-    await interaction.editReply(lines.join('\n'));
+    await message.reply(lines.join('\n'));
   } catch (err) {
-    console.error('Failed to handle /restart:', err);
-    await interaction.editReply(`❌ Restart failed: ${err.message}`).catch(() => {});
+    console.error('Failed to handle !restart:', err);
+    await message.reply(`❌ Restart failed: ${err.message}`).catch(() => {});
     return;
+  } finally {
+    clearInterval(typing);
   }
   await client.destroy();
   process.exit(0);

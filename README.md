@@ -7,8 +7,9 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 
 1. **Create the bot** at <https://discord.com/developers/applications> → New Application → **Bot**.
    - Click **Reset Token** and copy the token.
-   - Under **Privileged Gateway Intents**, turn on **Presence Intent** and **Server Members Intent**.
-     Without these the bot can't see what anyone is listening to.
+   - Under **Privileged Gateway Intents**, turn on **Presence Intent**, **Server Members Intent** and
+     **Message Content Intent**. Without the first two the bot can't see what anyone is listening
+     to; the last one lets it read `!restart`.
 2. **Invite the bot**: OAuth2 → URL Generator → scopes `bot`; permissions **View Channels**,
    **Send Messages**, **Embed Links**. Open the generated URL and pick your server.
 3. **Configure**: copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` and `ANNOUNCE_CHANNEL_ID`
@@ -33,11 +34,13 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 - `/listenalong user:@someone` posts the invite for what someone else is playing.
 - If that person isn't listening to Spotify, only you see a short error message.
 
-- `/restart` (bot admin only) pulls the latest `master` from GitHub, installs dependencies and
-  restarts the bot, then posts `✅ Back online on <commit>`. Needs the systemd setup in
-  [DEPLOY.md](DEPLOY.md) to come back up.
+Slash commands are registered in each server when the bot starts or joins, so they show up right away.
 
-Commands are registered in each server when the bot starts or joins, so they show up right away.
+## Admin: `!restart`
+
+Only Discord user `541010558653169667` can use it; the bot ignores it from anyone else.
+It pulls the latest `master` from GitHub, installs dependencies and restarts the bot, then posts
+`✅ Back online on <commit>`. Needs the systemd setup in [DEPLOY.md](DEPLOY.md) to come back up.
 
 ## Running on a server
 
