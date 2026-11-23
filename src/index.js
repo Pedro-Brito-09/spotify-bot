@@ -228,9 +228,50 @@ async function handleSetChannel(interaction) {
 client.on(Events.MessageCreate, async (message) => {
   // Stays silent for everyone except the admin, like RazzBot.
   if (message.author.id !== ADMIN_USER_ID) return;
-  if (message.content.trim() !== '!restart') return;
-  await handleRestart(message);
+  const content = message.content.trim();
+  if (content === '!restart') return handleRestart(message);
+  if (content === '!presence' || content.startsWith('!presence ')) return handlePresenceDebug(message);
 });
+
+/** userId -> the last raw PRESENCE_UPDATE Discord sent, exactly as received (for !presence). */
+const lastRawPresence = new Map();
+client.on(Events.Raw, (packet) => {
+  if (packet.t !== 'PRESENCE_UPDATE' || !packet.d?.user?.id) return;
+  lastRawPresence.set(packet.d.user.id, {
+    receivedAt: new Date().toISOString(),
+    guild: packet.d.guild_id,
+    status: packet.d.status,
+    client_status: packet.d.client_status,
+    activities: (packet.d.activities ?? []).map((a) => ({ type: a.type, name: a.name, details: a.details, sync_id: a.sync_id })),
+  });
+});
+
+const summarize = (presence) =>
+  presence
+    ? {
+        status: presence.status,
+        clientStatus: presence.clientStatus,
+        activities: presence.activities.map((a) => ({ type: a.type, name: a.name, details: a.details, syncId: a.syncId })),
+      }
+    : null;
+
+/** !presence [@user]: show exactly what Discord tells the bot about someone's status. */
+async function handlePresenceDebug(message) {
+  if (!message.guild) return;
+  const user = message.mentions.users.first() ?? message.author;
+  const fetched = await message.guild.members
+    .fetch({ user: [user.id], withPresences: true, time: 5_000 })
+    .catch((err) => ({ error: err.message }));
+  const report = {
+    user: user.tag,
+    intents: client.options.intents.toArray(),
+    cached: summarize(message.guild.presences.cache.get(user.id)),
+    fetchedNow: fetched.error ? fetched : summarize(fetched.get(user.id)?.presence),
+    lastRawUpdate: lastRawPresence.get(user.id) ?? 'none received since the bot started',
+  };
+  const json = JSON.stringify(report, null, 2);
+  await message.reply(`\`\`\`json\n${json.slice(0, 1900)}\n\`\`\``);
+}
 
 /** !restart: pull master, install dependencies, exit. The host (systemd or panel) starts it again. */
 async function handleRestart(message) {
