@@ -79,18 +79,18 @@ function formatDuration(activity) {
  */
 function buildMessage(member, spotify, mode = 'start', invitedBy = null) {
   const trackUrl = `https://open.spotify.com/track/${spotify.syncId}`;
-  const song = spotify.details ?? 'Unknown song';
-  const artists = (spotify.state ?? 'Unknown artist').replaceAll(';', ',');
+  const song = spotify.details ?? 'Música desconhecida';
+  const artists = (spotify.state ?? 'Artista desconhecido').replaceAll(';', ',');
   const album = spotify.assets?.largeText;
   const duration = formatDuration(spotify);
 
   const intros = {
-    start: `🎧 <@${member.id}> just started listening to Spotify!`,
-    change: `🎶 <@${member.id}> is now playing a new song on Spotify!`,
+    start: `🎧 <@${member.id}> começou a ouvir Spotify!`,
+    change: `🎶 <@${member.id}> está tocando uma nova música no Spotify!`,
     invite:
       invitedBy && invitedBy.id !== member.id
-        ? `📣 <@${invitedBy.id}> is inviting everyone to listen along with <@${member.id}>!`
-        : `📣 <@${member.id}> is inviting everyone to listen along!`,
+        ? `📣 <@${invitedBy.id}> está chamando todo mundo para ouvir junto com <@${member.id}>!`
+        : `📣 <@${member.id}> está chamando todo mundo para ouvir junto!`,
   };
   const intro = intros[mode];
 
@@ -101,22 +101,22 @@ function buildMessage(member, spotify, mode = 'start', invitedBy = null) {
     .setURL(trackUrl)
     .setDescription(
       `${intro}\n\n` +
-        `**Want to join the session?** Click on <@${member.id}>'s profile and press ` +
-        `**Listen Along** to hear the same music in sync. 🎉\n` +
-        `-# Listen Along requires Spotify Premium and a Spotify account connected to Discord.`,
+        `**Quer entrar na sessão?** Clique no perfil de <@${member.id}> e aperte ` +
+        `**Ouvir junto** para escutar a mesma música ao mesmo tempo. 🎉\n` +
+        `-# Ouvir junto precisa de Spotify Premium e de uma conta do Spotify conectada ao Discord.`,
     )
-    .addFields({ name: 'Artist', value: artists, inline: true })
-    .setFooter({ text: 'Listening on Spotify' })
+    .addFields({ name: 'Artista', value: artists, inline: true })
+    .setFooter({ text: 'Ouvindo no Spotify' })
     .setTimestamp();
 
-  if (album) embed.addFields({ name: 'Album', value: album, inline: true });
-  if (duration) embed.addFields({ name: 'Duration', value: duration, inline: true });
+  if (album) embed.addFields({ name: 'Álbum', value: album, inline: true });
+  if (duration) embed.addFields({ name: 'Duração', value: duration, inline: true });
 
   const art = albumArtUrl(spotify);
   if (art) embed.setThumbnail(art);
 
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Open in Spotify').setURL(trackUrl),
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Abrir no Spotify').setURL(trackUrl),
   );
 
   return {
@@ -128,21 +128,22 @@ function buildMessage(member, spotify, mode = 'start', invitedBy = null) {
 
 const listenAlongCommand = new SlashCommandBuilder()
   .setName('listenalong')
-  .setDescription('Invite everyone to Listen Along with what you (or someone else) are playing on Spotify')
+  .setDescription('Chama todo mundo para ouvir junto o que você (ou outra pessoa) está tocando no Spotify')
   .setContexts(InteractionContextType.Guild)
   .addUserOption((o) =>
-    o.setName('user').setDescription('Whose music to share (defaults to you)').setRequired(false),
+    o.setName('user').setNameLocalizations({ 'pt-BR': 'usuario' }).setDescription('De quem é a música (padrão: você)').setRequired(false),
   );
 
 const setChannelCommand = new SlashCommandBuilder()
   .setName('setchannel')
-  .setDescription('Choose the channel where Spotify listening announcements are posted')
+  .setDescription('Escolhe o canal onde os avisos do Spotify são enviados')
   .setContexts(InteractionContextType.Guild)
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild) // only people who can manage the server
   .addChannelOption((o) =>
     o
       .setName('channel')
-      .setDescription('Where to post the announcements')
+      .setNameLocalizations({ 'pt-BR': 'canal' })
+      .setDescription('Onde enviar os avisos')
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
       .setRequired(true),
   );
@@ -194,6 +195,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.commandName === 'setchannel') return handleSetChannel(interaction);
 });
 
+const PERMISSION_NAMES = { ViewChannel: 'Ver canal', SendMessages: 'Enviar mensagens', EmbedLinks: 'Inserir links' };
+
 async function handleSetChannel(interaction) {
   try {
     const channel = interaction.options.getChannel('channel', true);
@@ -206,21 +209,21 @@ async function handleSetChannel(interaction) {
       ]);
     if (missing?.length) {
       await interaction.reply({
-        content: `I can't post in <#${channel.id}>. I'm missing: **${missing.join(', ')}**.`,
+        content: `Não consigo enviar mensagens em <#${channel.id}>. Falta a permissão: **${missing.map((p) => PERMISSION_NAMES[p] ?? p).join(', ')}**.`,
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
     setChannelId(interaction.guildId, channel.id);
     await interaction.reply({
-      content: `✅ Spotify announcements will now be posted in <#${channel.id}>.`,
+      content: `✅ Os avisos do Spotify agora vão ser enviados em <#${channel.id}>.`,
       flags: MessageFlags.Ephemeral,
     });
     console.log(`${interaction.guild.name}: announcement channel set to #${channel.name} by ${interaction.user.tag}`);
   } catch (err) {
     console.error('Failed to handle /setchannel:', err);
     if (!interaction.replied) {
-      await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: 'Algo deu errado.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 }
@@ -254,19 +257,19 @@ async function handleClearCache(message) {
     guild.members.cache.sweep((_member, id) => id !== client.user.id);
   }
 
-  let refetched = 'not in a server, nothing re-fetched';
+  let refetched = 'fora de um servidor, nada foi buscado de novo';
   if (message.guild) {
     try {
       const fresh = await message.guild.members.fetch({ withPresences: true, time: 30_000 });
-      refetched = `re-fetched ${fresh.size} member(s), ${message.guild.presences.cache.size} with a visible status`;
+      refetched = `buscados de novo: ${fresh.size} membro(s), ${message.guild.presences.cache.size} com status visível`;
     } catch (err) {
-      refetched = `re-fetch failed: ${err.message}`;
+      refetched = `falha ao buscar de novo: ${err.message}`;
     }
   }
 
   await message.reply(
-    `🧹 Cache cleared: ${cooldowns} cooldown(s), ${presences} presence(s), ${members} member(s), ` +
-      `${rawUpdates} raw update(s).\n${refetched}.`,
+    `🧹 Cache limpo: ${cooldowns} cooldown(s), ${presences} status, ${members} membro(s), ` +
+      `${rawUpdates} atualização(ões) bruta(s).\n${refetched}.`,
   );
 }
 
@@ -304,7 +307,7 @@ async function handlePresenceDebug(message) {
     intents: client.options.intents.toArray(),
     cached: summarize(message.guild.presences.cache.get(user.id)),
     fetchedNow: fetched.error ? fetched : summarize(fetched.get(user.id)?.presence),
-    lastRawUpdate: lastRawPresence.get(user.id) ?? 'none received since the bot started',
+    lastRawUpdate: lastRawPresence.get(user.id) ?? 'nenhuma recebida desde que o bot iniciou',
   };
   const json = JSON.stringify(report, null, 2);
   await message.reply(`\`\`\`json\n${json.slice(0, 1900)}\n\`\`\``);
@@ -322,11 +325,11 @@ async function handleRestart(message) {
       return;
     }
     saveRestartNotice(message.channelId);
-    lines.push('🔄 Restarting...');
+    lines.push('🔄 Reiniciando...');
     await message.reply(lines.join('\n'));
   } catch (err) {
     console.error('Failed to handle !restart:', err);
-    await message.reply(`❌ Restart failed: ${err.message}`).catch(() => {});
+    await message.reply(`❌ Falha ao reiniciar: ${err.message}`).catch(() => {});
     return;
   } finally {
     clearInterval(typing);
@@ -337,27 +340,29 @@ async function handleRestart(message) {
   process.exit(1);
 }
 
+const STATUS_NAMES = { online: 'online', idle: 'ausente', dnd: 'não perturbe', offline: 'offline' };
+
 /** Explain why the bot can't see Spotify, based on what it does see. */
 function notListeningHelp(you, user, presence) {
-  const who = you ? 'you' : user.username;
+  const who = you ? 'você' : user.username;
   const activities = presence?.activities ?? [];
-  const seen = activities.map((a) => (a.type === ActivityType.Custom ? 'a custom status' : a.name)).join(', ');
+  const seen = activities.map((a) => (a.type === ActivityType.Custom ? 'um status personalizado' : a.name)).join(', ');
+  const sharing =
+    '**Compartilhar atividade** precisa estar ligado neste servidor: clique com o botão direito no ícone do servidor → ' +
+    '**Configurações de privacidade** → ative **Status de atividade**.';
 
   if (!presence || presence.status === 'offline') {
     return (
-      `I can't see ${who} online at all, so I can't see Spotify either. Usually this means:
-` +
-      `• ${you ? 'Your' : 'Their'} status is set to **Invisible**, or
-` +
-      `• **Share my activity** is off for this server: right-click the server icon → **Privacy Settings** → turn on **Activity Status**.`
+      `Não consigo ver ${who} online, então também não vejo o Spotify. Normalmente é porque:\n` +
+      `• ${you ? 'Seu' : 'O'} status está como **Invisível**, ou\n` +
+      `• ${sharing}`
     );
   }
+  const status = STATUS_NAMES[presence.status] ?? presence.status;
   return (
-    `I can see ${who} as **${presence.status}**${seen ? ` with: ${seen}` : ' with no activity'}, but no Spotify. Check that:
-` +
-    `• **Share my activity** is on for this server: right-click the server icon → **Privacy Settings** → **Activity Status**.
-` +
-    `• Spotify is connected in **Settings → Connections** with **Display Spotify as your status** on.`
+    `Vejo ${who} como **${status}**${seen ? ` com: ${seen}` : ' sem nenhuma atividade'}, mas sem Spotify. Confira:\n` +
+    `• ${sharing}\n` +
+    '• O Spotify está conectado em **Configurações → Conexões** com **Exibir Spotify como seu status** ligado.'
   );
 }
 
@@ -388,7 +393,7 @@ async function handleListenAlong(interaction) {
   } catch (err) {
     console.error('Failed to handle /listenalong:', err);
     if (!interaction.replied) {
-      await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: 'Algo deu errado.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 }

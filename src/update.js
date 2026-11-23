@@ -45,26 +45,26 @@ export async function pullAndInstall() {
   const { output: before } = await git('rev-parse', '--short', 'HEAD');
   const pull = await git('pull', '--ff-only', 'origin', BRANCH);
   if (pull.code !== 0) {
-    return { ok: false, lines: [`❌ \`git pull\` failed, not restarting.\n\`\`\`\n${pull.output.slice(-1800)}\n\`\`\``] };
+    return { ok: false, lines: [`❌ \`git pull\` falhou, não vou reiniciar.\n\`\`\`\n${pull.output.slice(-1800)}\n\`\`\``] };
   }
   const { output: after } = await git('rev-parse', '--short', 'HEAD');
 
   const lines = [];
   if (before === after) {
-    lines.push(`Already up to date on \`${after}\`.`);
+    lines.push(`Já está atualizado em \`${after}\`.`);
   } else {
     const { output: log } = await git('log', '--format=- %h %s', `${before}..${after}`);
-    lines.push(`Pulled \`${before}\` → \`${after}\`:`, log.slice(-1500));
+    lines.push(`Atualizado de \`${before}\` para \`${after}\`:`, log.slice(-1500));
     const { output: changed } = await git('diff', '--name-only', `${before}..${after}`);
     if (changed.split('\n').some((f) => f === 'package.json' || f === 'package-lock.json')) {
-      lines.push('📦 Dependencies changed.');
+      lines.push('📦 As dependências mudaram.');
     }
   }
 
   // Every time, not only when package files changed: the boot-time updater may have pulled already.
   const install = await installDependencies();
   if (install.code !== 0) {
-    lines.push(`❌ \`npm ci\` failed, not restarting.\n\`\`\`\n${install.output.slice(-1500)}\n\`\`\``);
+    lines.push(`❌ \`npm ci\` falhou, não vou reiniciar.\n\`\`\`\n${install.output.slice(-1500)}\n\`\`\``);
     return { ok: false, lines };
   }
   return { ok: true, lines };
@@ -91,7 +91,7 @@ export async function announceRestartDone(client) {
   const { output: commit } = await git('rev-parse', '--short', 'HEAD');
   try {
     const channel = await client.channels.fetch(channelId);
-    await channel.send(`✅ Back online on \`${commit}\`.`);
+    await channel.send(`✅ De volta online em \`${commit}\`.`);
   } catch (err) {
     console.error('Could not announce restart:', err);
   }
