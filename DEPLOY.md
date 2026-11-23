@@ -63,7 +63,6 @@ remote URL), otherwise the boot-time pull fails and the bot keeps running old co
 sudo tee /etc/spotify-bot.env >/dev/null <<'EOF'
 DISCORD_TOKEN=your_discord_bot_token_here
 ANNOUNCE_ON_TRACK_CHANGE=true
-COOLDOWN_MINUTES=1
 EOF
 sudo chown root:spotifybot /etc/spotify-bot.env
 sudo chmod 640 /etc/spotify-bot.env

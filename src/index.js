@@ -27,8 +27,6 @@ const DEFAULT_CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID || null;
 const ANNOUNCE_ON_TRACK_CHANGE = process.env.ANNOUNCE_ON_TRACK_CHANGE !== 'false';
 // How long someone has to stay on a new song before it's announced, so skipping doesn't spam.
 const SONG_SETTLE_MS = 10_000;
-// Minimum time between two "started listening" announcements for the same user.
-const COOLDOWN_MS = Number(process.env.COOLDOWN_MINUTES ?? 1) * 60_000;
 // The only user allowed to run !restart.
 const ADMIN_USER_ID = '541010558653169667';
 
@@ -52,7 +50,7 @@ const client = new Client({
   ],
 });
 
-/** "guildId:userId" -> timestamp of last announcement */
+/** "guildId:userId" -> Spotify track id of the last song announced for them */
 const lastAnnounced = new Map();
 /** "guildId:userId" -> timer for an announcement waiting for the song to settle */
 const pendingAnnouncements = new Map();
@@ -243,11 +241,11 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 /**
- * !clearcache: forget cooldowns and every cached presence/member, then re-fetch this server's
+ * !clearcache: forget the last announced songs and every cached presence/member, then re-fetch this server's
  * members with fresh presences from Discord. /setchannel choices are settings, so they stay.
  */
 async function handleClearCache(message) {
-  const cooldowns = lastAnnounced.size;
+  const remembered = lastAnnounced.size;
   const rawUpdates = lastRawPresence.size;
   lastAnnounced.clear();
   lastRawPresence.clear();
@@ -273,7 +271,7 @@ async function handleClearCache(message) {
   }
 
   await message.reply(
-    `🧹 Cache limpo: ${cooldowns} cooldown(s), ${presences} status, ${members} membro(s), ` +
+    `🧹 Cache limpo: ${remembered} última(s) música(s) anunciada(s), ${presences} status, ${members} membro(s), ` +
       `${rawUpdates} atualização(ões) bruta(s).\n${refetched}.`,
   );
 }
@@ -419,10 +417,6 @@ client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
     if (!startedListening && !(ANNOUNCE_ON_TRACK_CHANGE && trackChanged)) return;
 
     const key = `${newPresence.guild.id}:${member.id}`;
-    if (startedListening) {
-      const last = lastAnnounced.get(key) ?? 0;
-      if (Date.now() - last < COOLDOWN_MS) return;
-    }
 
     // A new song waits SONG_SETTLE_MS before posting, and any newer song replaces the wait.
     // Skipping through several songs only announces the one the person stays on.
@@ -446,12 +440,14 @@ async function announce(guild, memberId, syncId, mode) {
   try {
     const spotify = getSpotify(guild.presences.cache.get(memberId));
     if (!spotify || spotify.syncId !== syncId) return; // stopped or skipped while we waited
+    // Same song as the last announcement (e.g. paused and resumed): don't post it twice.
+    if (lastAnnounced.get(key) === syncId) return;
 
     const channel = await getAnnounceChannel(guild);
     if (!channel) return; // no channel set for this server
 
     const member = await guild.members.fetch(memberId);
-    lastAnnounced.set(key, Date.now());
+    lastAnnounced.set(key, syncId);
     await channel.send(buildMessage(member, spotify, mode));
     console.log(`Announced ${member.user.tag}: ${spotify.details} - ${spotify.state}`);
   } catch (err) {

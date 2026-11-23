@@ -27,7 +27,8 @@ Posts a message in a channel when a server member starts listening to Spotify, s
   doesn't count.
 - A new song is only posted after the member stays on it for 10 seconds, so skipping through
   songs posts just the one they land on.
-- Starting to listen again has a per-user cooldown (`COOLDOWN_MINUTES`, default 1 minute).
+- There's no cooldown. The only repeat it skips is the same song announced last for that person,
+  so pausing and resuming doesn't post it twice.
 - Set `ANNOUNCE_ON_TRACK_CHANGE=false` to only post when someone starts listening.
 
 ## Commands
@@ -47,7 +48,7 @@ Slash commands are registered in each server when the bot starts or joins, so th
 
 Only Discord user `541010558653169667` can use these; the bot ignores them from anyone else.
 
-- `!clearcache` forgets the cooldowns and every saved member status, then asks Discord for
+- `!clearcache` forgets the last announced songs and every saved member status, then asks Discord for
   everyone's current status again. `/setchannel` choices are kept.
 - `!presence [@user]` shows exactly what Discord sends the bot about someone's status (for
   debugging when Spotify isn't detected).
