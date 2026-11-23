@@ -23,9 +23,12 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 ## How it works
 
 - Listens to `presenceUpdate` events and looks for a Spotify "Listening" activity.
-- Announces only when a member goes from *not listening* → *listening* (pausing/seeking doesn't count),
-  with a per-user cooldown (`COOLDOWN_MINUTES`, default 1 minute) so it doesn't spam.
-- Set `ANNOUNCE_ON_TRACK_CHANGE=true` to also post on every song change.
+- Announces when a member starts listening and every time they switch songs. Pausing or seeking
+  doesn't count.
+- A new song is only posted after the member stays on it for 10 seconds, so skipping through
+  songs posts just the one they land on.
+- Starting to listen again has a per-user cooldown (`COOLDOWN_MINUTES`, default 1 minute).
+- Set `ANNOUNCE_ON_TRACK_CHANGE=false` to only post when someone starts listening.
 
 ## Commands
 

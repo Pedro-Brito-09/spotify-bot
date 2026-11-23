@@ -23,7 +23,10 @@ const TOKEN = (process.env.DISCORD_TOKEN || process.env.TOKEN || '').trim();
 // Optional fallback for servers that haven't used /setchannel yet.
 const DEFAULT_CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID || null;
 // Also announce every time the song changes (not only when someone starts listening).
-const ANNOUNCE_ON_TRACK_CHANGE = process.env.ANNOUNCE_ON_TRACK_CHANGE === 'true';
+// On by default; set ANNOUNCE_ON_TRACK_CHANGE=false to only announce when someone starts listening.
+const ANNOUNCE_ON_TRACK_CHANGE = process.env.ANNOUNCE_ON_TRACK_CHANGE !== 'false';
+// How long someone has to stay on a new song before it's announced, so skipping doesn't spam.
+const SONG_SETTLE_MS = 10_000;
 // Minimum time between two "started listening" announcements for the same user.
 const COOLDOWN_MS = Number(process.env.COOLDOWN_MINUTES ?? 1) * 60_000;
 // The only user allowed to run !restart.
@@ -51,6 +54,8 @@ const client = new Client({
 
 /** "guildId:userId" -> timestamp of last announcement */
 const lastAnnounced = new Map();
+/** "guildId:userId" -> timer for an announcement waiting for the song to settle */
+const pendingAnnouncements = new Map();
 
 /** Returns the Spotify activity from a presence, if any. */
 function getSpotify(presence) {
@@ -413,21 +418,45 @@ client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
     // Presence updates fire on pause/seek/etc. Only react to real changes.
     if (!startedListening && !(ANNOUNCE_ON_TRACK_CHANGE && trackChanged)) return;
 
-    const channel = await getAnnounceChannel(newPresence.guild);
-    if (!channel) return; // no channel set for this server
-
-    const cooldownKey = `${newPresence.guild.id}:${member.id}`;
+    const key = `${newPresence.guild.id}:${member.id}`;
     if (startedListening) {
-      const last = lastAnnounced.get(cooldownKey) ?? 0;
+      const last = lastAnnounced.get(key) ?? 0;
       if (Date.now() - last < COOLDOWN_MS) return;
     }
-    lastAnnounced.set(cooldownKey, Date.now());
 
-    await channel.send(buildMessage(member, newSpotify, startedListening ? 'start' : 'change'));
-    console.log(`Announced ${member.user.tag}: ${newSpotify.details} - ${newSpotify.state}`);
+    // A new song waits SONG_SETTLE_MS before posting, and any newer song replaces the wait.
+    // Skipping through several songs only announces the one the person stays on.
+    clearTimeout(pendingAnnouncements.get(key));
+    pendingAnnouncements.set(
+      key,
+      setTimeout(
+        () => announce(newPresence.guild, member.id, newSpotify.syncId, startedListening ? 'start' : 'change'),
+        startedListening ? 0 : SONG_SETTLE_MS,
+      ),
+    );
   } catch (err) {
     console.error('Failed to handle presence update:', err);
   }
 });
+
+/** Post the announcement if the member is still on the same song. */
+async function announce(guild, memberId, syncId, mode) {
+  const key = `${guild.id}:${memberId}`;
+  pendingAnnouncements.delete(key);
+  try {
+    const spotify = getSpotify(guild.presences.cache.get(memberId));
+    if (!spotify || spotify.syncId !== syncId) return; // stopped or skipped while we waited
+
+    const channel = await getAnnounceChannel(guild);
+    if (!channel) return; // no channel set for this server
+
+    const member = await guild.members.fetch(memberId);
+    lastAnnounced.set(key, Date.now());
+    await channel.send(buildMessage(member, spotify, mode));
+    console.log(`Announced ${member.user.tag}: ${spotify.details} - ${spotify.state}`);
+  } catch (err) {
+    console.error('Failed to announce:', err);
+  }
+}
 
 client.login(TOKEN);
