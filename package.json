@@ -4,8 +4,7 @@
   "description": "Discord bot that announces Spotify listening sessions",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --env-file=.env src/index.js"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +12,8 @@
   "type": "module",
   "dependencies": {
     "discord.js": "^14.28.1"
+  },
+  "engines": {
+    "node": ">=20.12"
   }
 }

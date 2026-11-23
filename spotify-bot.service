@@ -10,7 +10,7 @@ Group=spotifybot
 WorkingDirectory=/opt/spotify-bot
 EnvironmentFile=/etc/spotify-bot.env
 Environment=npm_config_cache=/opt/spotify-bot/.npm
-ExecStart=/usr/bin/node /opt/spotify-bot/src/index.js
+ExecStart=/usr/bin/node /opt/spotify-bot/index.js
 
 Restart=always
 RestartSec=10

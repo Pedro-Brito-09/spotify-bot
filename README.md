@@ -44,8 +44,8 @@ It pulls the latest `master` from GitHub, installs dependencies and restarts the
 
 ## Running on a server
 
-See [DEPLOY.md](DEPLOY.md). Like RazzBot, it runs under systemd and pulls `master` from GitHub every
-time it starts.
+See [DEPLOY.md](DEPLOY.md): either a hosting panel like Pterodactyl (main file `index.js`) or a VPS
+with systemd like RazzBot. Both pull `master` from GitHub every time the bot starts.
 
 ## Limitations
 

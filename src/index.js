@@ -24,7 +24,10 @@ const COOLDOWN_MS = Number(process.env.COOLDOWN_MINUTES ?? 1) * 60_000;
 const ADMIN_USER_ID = '541010558653169667';
 
 if (!TOKEN || !CHANNEL_ID) {
-  console.error('Missing DISCORD_TOKEN or ANNOUNCE_CHANNEL_ID. Copy .env.example to .env and fill it in.');
+  console.error(
+    'Missing DISCORD_TOKEN or ANNOUNCE_CHANNEL_ID. Copy .env.example to .env and fill it in ' +
+      '(or set them as environment variables in your hosting panel).',
+  );
   process.exit(1);
 }
 
@@ -165,7 +168,7 @@ client.on(Events.MessageCreate, async (message) => {
   await handleRestart(message);
 });
 
-/** !restart: pull master, install dependencies, exit. systemd's Restart=always brings the bot back. */
+/** !restart: pull master, install dependencies, exit. The host (systemd or panel) starts it again. */
 async function handleRestart(message) {
   // Typing indicator lasts ~10s, so keep it going while git/npm run.
   message.channel.sendTyping().catch(() => {});
@@ -187,7 +190,9 @@ async function handleRestart(message) {
     clearInterval(typing);
   }
   await client.destroy();
-  process.exit(0);
+  // Non-zero on purpose: hosting panels (Pterodactyl) only auto-restart a process that "crashed".
+  // systemd's Restart=always brings it back either way.
+  process.exit(1);
 }
 
 async function handleListenAlong(interaction) {

@@ -1,4 +1,33 @@
-# Deploying the Spotify bot on a Linux VPS
+# Deploying the Spotify bot
+
+Two options: a **hosting panel** (Pterodactyl and similar: paths like `/home/container`) or your
+own **Linux VPS with systemd** (same setup as RazzBot).
+
+## Hosting panel (Pterodactyl)
+
+Use a Node.js egg/server, Node **20.12 or newer**. In the server's **Startup** tab:
+
+| Setting | Value |
+|---|---|
+| Git Repo Address | `https://github.com/Pedro-Brito-09/spotify-bot.git` |
+| Install Branch | `master` |
+| Auto Update | `1` (on): pulls `master` every time the server starts |
+| Main file / Bot JS file | `index.js` |
+| Git Username / Access Token | only if the repo is private |
+
+Then create a `.env` file in `/home/container` with the **File Manager** (same contents as
+`.env.example`, at least `DISCORD_TOKEN` and `ANNOUNCE_CHANNEL_ID`). The bot reads it itself.
+
+If the files were there before you set the Git address, run **Settings → Reinstall Server** so the
+panel clones the repo (back up your `.env` first).
+
+`!restart` pulls, runs `npm ci`, and exits with code 1 so the panel's crash detection starts it
+again. If the bot stays offline after `!restart`, start it from the panel; the code it pulled is
+already installed.
+
+---
+
+## Linux VPS with systemd
 
 Same setup as RazzBot: runs under systemd as an unprivileged `spotifybot` user, restarts on
 crash and on reboot, and **pulls `master` from GitHub every time it starts**.
