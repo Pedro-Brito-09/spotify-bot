@@ -18,7 +18,8 @@ Use a Node.js egg/server, Node **20.12 or newer**. In the server's **Startup** t
 Then create a `.env` file in `/home/container` with the **File Manager** (same contents as
 `.env.example`, at least `DISCORD_TOKEN`). The bot reads it itself. Then pick the announcement
 channel in Discord with `/setchannel`; it's saved in `data/channels.json`, which updates don't touch
-(a **Reinstall Server** does wipe it).
+(a **Reinstall Server** does wipe it). Listening stats for `/perfil` and `/ranking` live in
+`data/stats.json` next to it: back up the whole `data/` folder before reinstalling.
 
 If the files were there before you set the Git address, run **Settings → Reinstall Server** so the
 panel clones the repo (back up your `.env` first).

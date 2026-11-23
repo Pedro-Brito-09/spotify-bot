@@ -15,6 +15,8 @@ import {
 } from 'discord.js';
 import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
+import { saveStats, trackListening } from './stats.js';
+import { handleProfile, handleRanking, profileCommand, rankingCommand } from './statsCommands.js';
 import { announceRestartDone, BOT_DIR, pullAndInstall, saveRestartNotice } from './update.js';
 
 // ---------- Config ----------
@@ -162,7 +164,7 @@ async function getAnnounceChannel(guild) {
 
 // Only slash commands go here; !restart is a prefix command handled in MessageCreate.
 // Registering this list also removes any old /restart left over from earlier versions.
-const COMMANDS = [listenAlongCommand, setChannelCommand];
+const COMMANDS = [listenAlongCommand, setChannelCommand, profileCommand, rankingCommand];
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
@@ -175,6 +177,14 @@ client.once(Events.ClientReady, async (c) => {
     );
     // 0 here means presences aren't arriving: Presence Intent is off in the Developer Portal.
     console.log(`${guild.name}: can see ${guild.presences.cache.size} member presence(s)`);
+  }
+
+  // Start counting for people who were already listening when the bot came online.
+  for (const guild of c.guilds.cache.values()) {
+    for (const presence of guild.presences.cache.values()) {
+      const spotify = getSpotify(presence);
+      if (spotify && !presence.user?.bot) trackListening(guild.id, presence.userId, spotify);
+    }
   }
 
   await announceRestartDone(c);
@@ -196,6 +206,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'listenalong') return handleListenAlong(interaction);
   if (interaction.commandName === 'setchannel') return handleSetChannel(interaction);
+  try {
+    if (interaction.commandName === 'perfil') return await handleProfile(interaction);
+    if (interaction.commandName === 'ranking') return await handleRanking(interaction);
+  } catch (err) {
+    console.error(`Failed to handle /${interaction.commandName}:`, err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: 'Algo deu errado.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+  }
 });
 
 const PERMISSION_NAMES = { ViewChannel: 'Ver canal', SendMessages: 'Enviar mensagens', EmbedLinks: 'Inserir links' };
@@ -337,6 +356,7 @@ async function handleRestart(message) {
   } finally {
     clearInterval(typing);
   }
+  saveStats();
   await client.destroy();
   // Non-zero on purpose: hosting panels (Pterodactyl) only auto-restart a process that "crashed".
   // systemd's Restart=always brings it back either way.
@@ -403,11 +423,12 @@ async function handleListenAlong(interaction) {
 
 client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
   try {
-    const member = newPresence.member;
-    if (!member || member.user.bot) return;
-
+    if (newPresence.user?.bot || newPresence.member?.user.bot) return;
     const newSpotify = getSpotify(newPresence);
-    if (!newSpotify) return;
+    trackListening(newPresence.guild.id, newPresence.userId, newSpotify ?? null);
+
+    const member = newPresence.member;
+    if (!member || !newSpotify) return;
 
     const oldSpotify = getSpotify(oldPresence);
     const startedListening = !oldSpotify;
@@ -453,6 +474,14 @@ async function announce(guild, memberId, syncId, mode) {
   } catch (err) {
     console.error('Failed to announce:', err);
   }
+}
+
+// Save stats when the host stops the bot (panel stop button, systemctl stop, Ctrl+C).
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    saveStats();
+    process.exit(0);
+  });
 }
 
 client.login(TOKEN);

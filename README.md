@@ -42,6 +42,20 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 - `/listenalong user:@someone` posts the invite for what someone else is playing.
 - If that person isn't listening to Spotify, only you see a short error message.
 
+- `/perfil [usuario]` shows someone's listening profile: total time, songs played, their position
+  in the server ranking, favourite artists and most played songs, and what they're playing now.
+- `/ranking [categoria]` shows the server's top 10: who listened the most (time), who played the
+  most songs, most listened artists, or most played songs.
+
+### How stats are counted
+
+- Time counts while someone's Spotify activity is visible to the bot, per server.
+- A song counts as played after 30 seconds of listening (like Spotify). Pausing and resuming the
+  same song counts once; a song on repeat counts every time.
+- Stats are saved to `data/stats.json` every 30 seconds and when the bot stops. Updates from GitHub
+  don't touch it; a panel **Reinstall Server** deletes it, so back it up first.
+- Members whose activity the bot can't see (privacy settings, invisible) aren't counted.
+
 Slash commands are registered in each server when the bot starts or joins, so they show up right away.
 
 ## Admin commands
