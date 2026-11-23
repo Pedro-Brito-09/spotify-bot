@@ -1,0 +1,17 @@
+[Unit]
+Description=Update Spotify Listen Along bot from GitHub
+After=network-online.target
+Wants=network-online.target
+Before=spotify-bot.service
+
+[Service]
+Type=oneshot
+User=spotifybot
+Group=spotifybot
+WorkingDirectory=/opt/spotify-bot
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=npm_config_cache=/opt/spotify-bot/.npm
+ExecStart=/usr/bin/git -C /opt/spotify-bot pull --ff-only origin master
+# Node needs node_modules to match package-lock.json, so install after every pull.
+ExecStart=/usr/bin/npm ci --omit=dev --no-audit --no-fund
+TimeoutStartSec=600
