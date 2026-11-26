@@ -83,6 +83,12 @@ let queue = Promise.resolve();
 const inFlight = new Map();
 const failedAt = new Map();
 
+// When Last.fm can't be reached at all (timeouts, connection errors), stop trying for a while
+// instead of waiting on every artist. Some hosts block outgoing connections to most sites.
+const OFFLINE_PAUSE_MS = 15 * 60_000;
+let pausedUntil = 0;
+const isNetworkError = (err) => err.name === 'TimeoutError' || err.name === 'AbortError' || err.cause != null;
+
 async function requestTags(artist) {
   const url = new URL('https://ws.audioscrobbler.com/2.0/');
   url.search = new URLSearchParams({
@@ -92,7 +98,7 @@ async function requestTags(artist) {
     api_key: API_KEY,
     format: 'json',
   }).toString();
-  const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  const res = await fetch(url, { signal: AbortSignal.timeout(6_000) });
   const body = await res.json().catch(() => null);
   if (body?.error === 6) return []; // artist not found
   if (!res.ok || !body?.toptags) throw new Error(`Last.fm: ${body?.message ?? res.status}`);
@@ -112,21 +118,32 @@ export function fetchGenres(artist) {
   const hit = cache[key];
   const ttl = hit?.genres.length ? FOUND_TTL_MS : NOT_FOUND_TTL_MS;
   if (hit && Date.now() - hit.at < ttl) return Promise.resolve(hit.genres);
+  if (Date.now() < pausedUntil) return Promise.resolve(hit?.genres ?? []);
   if (Date.now() - (failedAt.get(key) ?? 0) < ERROR_BACKOFF_MS) return Promise.resolve(hit?.genres ?? []);
   if (inFlight.has(key)) return inFlight.get(key);
 
   const job = (queue = queue
-    .then(() => requestTags(artist))
-    .then((tags) => {
-      const genres = pickGenres(artist, tags);
-      cache[key] = { genres, at: Date.now() };
-      scheduleSave();
-      return genres;
-    })
-    .catch((err) => {
-      failedAt.set(key, Date.now());
-      console.error(`Could not get genres for "${artist}":`, err.message);
-      return hit?.genres ?? [];
+    .then(async () => {
+      if (Date.now() < pausedUntil) return hit?.genres ?? []; // went offline while this waited in line
+      try {
+        const genres = pickGenres(artist, await requestTags(artist));
+        cache[key] = { genres, at: Date.now() };
+        scheduleSave();
+        return genres;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          pausedUntil = Date.now() + OFFLINE_PAUSE_MS;
+          console.error(
+            `Last.fm unreachable from this server (${err.cause?.code ?? err.message}). ` +
+              'Pausing genre lookups for 15 minutes. If this keeps happening, the host may be blocking ' +
+              'outgoing connections to ws.audioscrobbler.com.',
+          );
+        } else {
+          failedAt.set(key, Date.now());
+          console.error(`Could not get genres for "${artist}":`, err.message);
+        }
+        return hit?.genres ?? [];
+      }
     })
     .finally(() => inFlight.delete(key))
     .then((genres) => new Promise((r) => setTimeout(() => r(genres), REQUEST_GAP_MS))));

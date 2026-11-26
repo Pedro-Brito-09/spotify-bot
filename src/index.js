@@ -13,6 +13,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
+import dns from 'node:dns';
 import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
 import { genreLabel, genresEnabled, genresForArtists, prefetchGenres } from './genres.js';
@@ -26,6 +27,9 @@ import {
   rankingCommand,
 } from './statsCommands.js';
 import { announceRestartDone, BOT_DIR, pullAndInstall, saveRestartNotice } from './update.js';
+
+// Some hosts have broken IPv6; try IPv4 addresses first so connections don't hang.
+dns.setDefaultResultOrder('ipv4first');
 
 // ---------- Config ----------
 // TOKEN is accepted too, since that's the name RazzBot's config uses.
@@ -511,4 +515,46 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-client.login(TOKEN);
+// ---------- Staying connected ----------
+// On a flaky network the websocket library can throw "Opening handshake has timed out" outside of
+// discord.js's error handling, which would crash the bot on the spot. Log it and give discord.js a
+// chance to reconnect by itself; the watchdog below restarts the process if it doesn't.
+const NETWORK_ERROR = /handshake has timed out|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|socket hang up/i;
+const RECOVER_AFTER_NETWORK_ERROR_MS = 2 * 60_000;
+const RECOVER_MS = 5 * 60_000;
+let lastNetworkError = 0;
+
+process.on('uncaughtException', (err) => {
+  if (NETWORK_ERROR.test(`${err.message} ${err.code ?? ''}`)) {
+    console.error(`Network error talking to Discord (${err.message}), waiting for it to reconnect...`);
+    lastNetworkError = Date.now();
+    return;
+  }
+  console.error('Crashed:', err);
+  saveStats();
+  process.exit(1); // the panel / systemd starts it again
+});
+process.on('unhandledRejection', (err) => console.error('Unhandled error:', err));
+
+// If the bot stays disconnected, restart the whole process (exit code 1 -> the panel starts it again).
+let disconnectedSince = null;
+setInterval(() => {
+  if (client.isReady()) {
+    if (disconnectedSince) console.log('Connected to Discord again');
+    disconnectedSince = null;
+    return;
+  }
+  disconnectedSince ??= Date.now();
+  const limit = Date.now() - lastNetworkError < RECOVER_MS ? RECOVER_AFTER_NETWORK_ERROR_MS : RECOVER_MS;
+  if (Date.now() - disconnectedSince > limit) {
+    console.error(`Not connected to Discord for ${limit / 60_000} minutes, restarting.`);
+    saveStats();
+    process.exit(1);
+  }
+}, 15_000).unref();
+
+client.login(TOKEN).catch((err) => {
+  console.error('Could not log in to Discord:', err.message);
+  saveStats();
+  process.exit(1);
+});

@@ -113,3 +113,5 @@ Push to `master`, then either:
 | `!restart` says `git pull` failed | Local changes in `/opt/spotify-bot`, or no access to a private repo |
 | `!restart` does nothing | Message Content Intent is off, or the bot can't see that channel |
 | `!restart` exits but the bot doesn't come back | It isn't running under systemd (e.g. `npm start` by hand) |
+| `Last.fm unreachable from this server` | The host blocks or can't reach `ws.audioscrobbler.com`; genres stay off until it can. Ask the host, or move the bot |
+| `Network error talking to Discord` | The host's connection dropped; the bot waits 2 minutes for it to come back, then restarts itself (exit code 1) |
