@@ -6,6 +6,7 @@
 // listening to it for at least MIN_PLAY_MS, like Spotify does.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { getCachedGenres, prefetchGenres } from './genres.js';
 import { BOT_DIR } from './update.js';
 
 const FILE = path.join(BOT_DIR, 'data', 'stats.json');
@@ -65,6 +66,7 @@ const RESUME_WINDOW_MS = 30 * 60_000;
 
 function newSession(spotify, now) {
   const art = spotify.assets?.largeImage;
+  prefetchGenres(artistsOf(spotify.state)); // so genres are ready for profiles and rankings
   return {
     syncId: spotify.syncId,
     title: spotify.details ?? '?',
@@ -173,6 +175,29 @@ function settleAll(now = Date.now()) {
 
 // ---------- Queries ----------
 
+/** Every artist in the stats, so their genres can be looked up. */
+export function knownArtists() {
+  const names = new Set();
+  for (const g of Object.values(data.guilds)) for (const a of Object.keys(g.artists)) names.add(a);
+  return [...names];
+}
+
+/**
+ * Turn per-artist stats into per-genre stats: listening to an artist counts for each of its genres.
+ * Artists whose genres aren't known yet are left out.
+ */
+function genresFrom(artists) {
+  const out = {};
+  for (const [name, s] of Object.entries(artists)) {
+    for (const genre of getCachedGenres(name) ?? []) {
+      const x = (out[genre] ??= { ms: 0, plays: 0 });
+      x.ms += s.ms;
+      x.plays += s.plays;
+    }
+  }
+  return out;
+}
+
 const top = (obj, by, n) =>
   Object.entries(obj)
     .filter(([, s]) => s[by] > 0) // e.g. skipped songs never make "most played"
@@ -192,6 +217,7 @@ export function getProfile(guildId, userId) {
     rank: byTime.findIndex(([id]) => id === userId) + 1,
     rankedUsers: byTime.length,
     topArtists: top(u.artists, 'ms', 5).map(([name, s]) => ({ name, ...s })),
+    topGenres: top(genresFrom(u.artists), 'ms', 5).map(([name, s]) => ({ name, ...s })),
     topTracks: top(u.tracks, 'plays', 5).map(([id, s]) => ({ id, ...g.tracks[id], ms: s.ms, plays: s.plays })),
     nowPlaying: sessions.get(`${guildId}:${userId}`) ?? null,
   };
@@ -224,8 +250,14 @@ export function getCompatibility(guildId, userA, userB) {
   const missing = [[userA, a], [userB, b]].filter(([, u]) => !u || u.ms < MIN_COMPARE_MS).map(([id]) => id);
   if (missing.length) return { missing };
 
-  // Artists say more about taste than exact songs, so they weigh more.
-  const raw = 0.75 * overlap(a.artists, b.artists) + 0.25 * overlap(a.tracks, b.tracks);
+  // Artists say more about taste than exact songs, so they weigh more. Genres catch people who like
+  // the same style through different artists; they only count once both have genre data.
+  const genresA = genresFrom(a.artists);
+  const genresB = genresFrom(b.artists);
+  const haveGenres = Object.keys(genresA).length > 0 && Object.keys(genresB).length > 0;
+  const raw = haveGenres
+    ? 0.5 * overlap(a.artists, b.artists) + 0.3 * overlap(genresA, genresB) + 0.2 * overlap(a.tracks, b.tracks)
+    : 0.75 * overlap(a.artists, b.artists) + 0.25 * overlap(a.tracks, b.tracks);
   // Even very similar listeners rarely split their time identically; sqrt spreads the scale out.
   const percent = Math.round(100 * Math.sqrt(raw));
 
@@ -237,6 +269,7 @@ export function getCompatibility(guildId, userA, userB) {
 
   return {
     percent,
+    sharedGenres: shared(genresA, genresB).map(({ key, a: sa, b: sb }) => ({ name: key, msA: sa.ms, msB: sb.ms })),
     sharedArtists: shared(a.artists, b.artists).map(({ key, a: sa, b: sb }) => ({ name: key, msA: sa.ms, msB: sb.ms })),
     sharedTracks: shared(a.tracks, b.tracks).map(({ key, a: sa, b: sb }) => ({
       id: key,
@@ -247,7 +280,7 @@ export function getCompatibility(guildId, userA, userB) {
   };
 }
 
-/** kind: 'tempo' | 'musicas' (members) or 'artistas' | 'faixas' (server-wide). */
+/** kind: 'tempo' | 'musicas' (members) or 'artistas' | 'generos' | 'faixas' (server-wide). */
 export function getRanking(guildId, kind, n = 10) {
   settleAll();
   const g = data.guilds[guildId];
@@ -255,6 +288,7 @@ export function getRanking(guildId, kind, n = 10) {
   if (kind === 'tempo') return top(g.users, 'ms', n).map(([id, s]) => ({ id, ...s }));
   if (kind === 'musicas') return top(g.users, 'plays', n).map(([id, s]) => ({ id, ...s }));
   if (kind === 'artistas') return top(g.artists, 'ms', n).map(([name, s]) => ({ name, ...s }));
+  if (kind === 'generos') return top(genresFrom(g.artists), 'ms', n).map(([name, s]) => ({ name, ...s }));
   if (kind === 'faixas') return top(g.tracks, 'plays', n).map(([id, s]) => ({ id, ...s }));
   return [];
 }

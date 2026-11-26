@@ -16,10 +16,10 @@ Use a Node.js egg/server, Node **20.12 or newer**. In the server's **Startup** t
 | Git Username / Access Token | only if the repo is private |
 
 Then create a `.env` file in `/home/container` with the **File Manager** (same contents as
-`.env.example`, at least `DISCORD_TOKEN`). The bot reads it itself. Then pick the announcement
+`.env.example`, at least `DISCORD_TOKEN`, plus `LASTFM_API_KEY` for genres). The bot reads it itself. Then pick the announcement
 channel in Discord with `/setchannel`; it's saved in `data/channels.json`, which updates don't touch
 (a **Reinstall Server** does wipe it). Listening stats for `/perfil` and `/ranking` live in
-`data/stats.json` next to it: back up the whole `data/` folder before reinstalling.
+`data/stats.json` next to it (and the genre cache in `data/genres.json`): back up the whole `data/` folder before reinstalling.
 
 If the files were there before you set the Git address, run **Settings → Reinstall Server** so the
 panel clones the repo (back up your `.env` first).
@@ -64,6 +64,7 @@ remote URL), otherwise the boot-time pull fails and the bot keeps running old co
 sudo tee /etc/spotify-bot.env >/dev/null <<'EOF'
 DISCORD_TOKEN=your_discord_bot_token_here
 ANNOUNCE_ON_TRACK_CHANGE=true
+LASTFM_API_KEY=your_lastfm_api_key_here
 EOF
 sudo chown root:spotifybot /etc/spotify-bot.env
 sudo chmod 640 /etc/spotify-bot.env

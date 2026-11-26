@@ -1,5 +1,6 @@
 // /perfil and /ranking: show the listening stats collected by stats.js.
 import { EmbedBuilder, InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
+import { genreLabel, genresEnabled } from './genres.js';
 import { getCompatibility, getProfile, getRanking } from './stats.js';
 
 const SPOTIFY_GREEN = 0x1db954;
@@ -37,6 +38,7 @@ export const rankingCommand = new SlashCommandBuilder()
         { name: 'Quem mais ouviu (tempo)', value: 'tempo' },
         { name: 'Quem mais tocou músicas', value: 'musicas' },
         { name: 'Artistas mais ouvidos', value: 'artistas' },
+        { name: 'Gêneros mais ouvidos', value: 'generos' },
         { name: 'Músicas mais tocadas', value: 'faixas' },
       ),
   );
@@ -74,6 +76,12 @@ export async function handleProfile(interaction) {
       value: p.topArtists.map((a, i) => `${position(i)} ${a.name} · ${formatTime(a.ms)}`).join('\n'),
     });
   }
+  if (p.topGenres.length) {
+    embed.addFields({
+      name: '🎸 Gêneros favoritos',
+      value: p.topGenres.map((g, i) => `${position(i)} ${genreLabel(g.name)} · ${formatTime(g.ms)}`).join('\n'),
+    });
+  }
   if (p.topTracks.length) {
     embed.addFields({
       name: '💿 Músicas mais tocadas',
@@ -97,6 +105,7 @@ const RANKING_TITLES = {
   tempo: '⏱️ Quem mais ouviu',
   musicas: '🎵 Quem mais tocou músicas',
   artistas: '🎤 Artistas mais ouvidos',
+  generos: '🎸 Gêneros mais ouvidos',
   faixas: '💿 Músicas mais tocadas',
 };
 
@@ -104,6 +113,13 @@ export async function handleRanking(interaction) {
   const kind = interaction.options.getString('categoria') ?? 'tempo';
   const rows = getRanking(interaction.guildId, kind, 10);
 
+  if (kind === 'generos' && !genresEnabled) {
+    await interaction.reply({
+      content: 'Os gêneros estão desligados: falta configurar a chave do Last.fm (`LASTFM_API_KEY`) no bot.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   if (!rows.length) {
     await interaction.reply({
       content: 'Ainda não tenho dados suficientes. Escutem um pouco de Spotify e voltem depois! 🎧',
@@ -116,6 +132,7 @@ export async function handleRanking(interaction) {
     tempo: (r) => `<@${r.id}> · ${formatTime(r.ms)}`,
     musicas: (r) => `<@${r.id}> · ${plural(r.plays, 'música', 'músicas')}`,
     artistas: (r) => `${r.name} · ${formatTime(r.ms)}`,
+    generos: (r) => `${genreLabel(r.name)} · ${formatTime(r.ms)}`,
     faixas: (r) => `${trackLabel(r)} · ${plural(r.plays, 'vez', 'vezes')}`,
   }[kind];
 
@@ -183,12 +200,24 @@ export async function handleCompatibility(interaction) {
 
   let description = `<@${userA.id}> × <@${userB.id}>\n\n${bar(c.percent)} **${c.percent}%**\n${verdict(c.percent)}`;
   if (c.sharedArtists[0]) description += `\n\nOs dois ouvem muito **${c.sharedArtists[0].name}**!`;
+  else if (c.sharedGenres[0]) description += `\n\nOs dois curtem **${genreLabel(c.sharedGenres[0].name)}**!`;
 
   const embed = new EmbedBuilder()
     .setColor(SPOTIFY_GREEN)
     .setTitle(`💘 Compatibilidade musical: ${nameA} e ${nameB}`.slice(0, 256))
     .setDescription(description)
     .addFields(
+      ...(c.sharedGenres.length
+        ? [
+            {
+              name: '🎸 Gêneros em comum',
+              value: c.sharedGenres
+                .slice(0, 5)
+                .map((g, i) => `${position(i)} ${genreLabel(g.name)} · ${formatTime(g.msA)} / ${formatTime(g.msB)}`)
+                .join('\n'),
+            },
+          ]
+        : []),
       {
         name: '🎤 Artistas em comum',
         value: c.sharedArtists.length

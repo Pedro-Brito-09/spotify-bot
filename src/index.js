@@ -15,7 +15,8 @@ import {
 } from 'discord.js';
 import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
-import { saveStats, trackListening } from './stats.js';
+import { genreLabel, genresEnabled, genresForArtists, prefetchGenres } from './genres.js';
+import { knownArtists, saveStats, trackListening } from './stats.js';
 import {
   compatibilityCommand,
   handleCompatibility,
@@ -84,12 +85,19 @@ function formatDuration(activity) {
   return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
 }
 
+/** "Artist A; Artist B" -> ['Artist A', 'Artist B'] */
+const splitArtists = (spotify) =>
+  (spotify.state ?? '')
+    .split(';')
+    .map((a) => a.trim())
+    .filter(Boolean);
+
 /**
  * mode: 'start'  -> member just started listening
  *       'change' -> member switched songs
  *       'invite' -> someone used /listenalong
  */
-function buildMessage(member, spotify, mode = 'start', invitedBy = null) {
+function buildMessage(member, spotify, mode = 'start', invitedBy = null, genres = []) {
   const trackUrl = `https://open.spotify.com/track/${spotify.syncId}`;
   const song = spotify.details ?? 'Música desconhecida';
   const artists = (spotify.state ?? 'Artista desconhecido').replaceAll(';', ',');
@@ -123,6 +131,9 @@ function buildMessage(member, spotify, mode = 'start', invitedBy = null) {
 
   if (album) embed.addFields({ name: 'Álbum', value: album, inline: true });
   if (duration) embed.addFields({ name: 'Duração', value: duration, inline: true });
+  if (genres.length) {
+    embed.addFields({ name: genres.length === 1 ? 'Gênero' : 'Gêneros', value: genres.map(genreLabel).join(', '), inline: true });
+  }
 
   const art = albumArtUrl(spotify);
   if (art) embed.setThumbnail(art);
@@ -193,6 +204,10 @@ client.once(Events.ClientReady, async (c) => {
       if (spotify && !presence.user?.bot) trackListening(guild.id, presence.userId, spotify);
     }
   }
+
+  // Look up genres for every artist already in the stats, in the background.
+  if (genresEnabled) prefetchGenres(knownArtists());
+  else console.log('LASTFM_API_KEY not set: genres are off');
 
   await announceRestartDone(c);
 
@@ -420,10 +435,13 @@ async function handleListenAlong(interaction) {
       return;
     }
 
-    await interaction.reply(buildMessage(member, spotify, 'invite', interaction.user));
+    await interaction.deferReply();
+    const genres = await genresForArtists(splitArtists(spotify), 2_500);
+    await interaction.editReply(buildMessage(member, spotify, 'invite', interaction.user, genres));
   } catch (err) {
     console.error('Failed to handle /listenalong:', err);
-    if (!interaction.replied) {
+    if (interaction.deferred) await interaction.editReply({ content: 'Algo deu errado.' }).catch(() => {});
+    else if (!interaction.replied) {
       await interaction.reply({ content: 'Algo deu errado.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
@@ -477,7 +495,8 @@ async function announce(guild, memberId, syncId, mode) {
 
     const member = await guild.members.fetch(memberId);
     lastAnnounced.set(key, syncId);
-    await channel.send(buildMessage(member, spotify, mode));
+    const genres = await genresForArtists(splitArtists(spotify));
+    await channel.send(buildMessage(member, spotify, mode, null, genres));
     console.log(`Announced ${member.user.tag}: ${spotify.details} - ${spotify.state}`);
   } catch (err) {
     console.error('Failed to announce:', err);

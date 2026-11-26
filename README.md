@@ -14,6 +14,8 @@ Posts a message in a channel when a server member starts listening to Spotify, s
    your server. It grants View Channels, Send Messages, Embed Links and Read Message History:
    `https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot+applications.commands&permissions=84992`
 3. **Configure**: copy `.env.example` to `.env` and fill in `DISCORD_TOKEN`.
+   - Optional, for genres: create a free Last.fm API key at <https://www.last.fm/api/account/create>
+     (any app name; the callback URL can stay empty) and set `LASTFM_API_KEY`.
 4. **Run** and use `/setchannel` in your server to pick the announcement channel:
    ```
    npm install
@@ -30,6 +32,15 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 - There's no cooldown. The only repeat it skips is the same song announced last for that person,
   so pausing and resuming doesn't post it twice.
 - Set `ANNOUNCE_ON_TRACK_CHANGE=false` to only post when someone starts listening.
+- With `LASTFM_API_KEY` set, announcements and `/listenalong` also show the song's genres.
+
+### Genres
+
+Discord doesn't send genres, so the bot takes them from the artist's tags on Last.fm (up to 3 per
+artist, skipping tags like "seen live", nationalities and decades). Each artist is looked up once
+and cached in `data/genres.json` for a month. On startup the bot also looks up every artist already
+in the stats, so old listening gets genres too. Artists Last.fm doesn't know just have no genre.
+Without the key everything else works the same, just without genres.
 
 ## Commands
 
@@ -43,13 +54,14 @@ Posts a message in a channel when a server member starts listening to Spotify, s
 - If that person isn't listening to Spotify, only you see a short error message.
 
 - `/perfil [usuario]` shows someone's listening profile: total time, songs played, their position
-  in the server ranking, favourite artists and most played songs, and what they're playing now.
+  in the server ranking, favourite artists and genres, most played songs, and what they're playing now.
 - `/ranking [categoria]` shows the server's top 10: who listened the most (time), who played the
-  most songs, most listened artists, or most played songs.
+  most songs, most listened artists, most listened genres, or most played songs.
 - `/compatibilidade usuario:@someone [outro:@someone]` shows how well two people's music taste
   matches (0–100%), with the artists and songs they have in common. Without `outro` it compares you
-  with `usuario`. The score is mostly shared artists (weighted by how much of each person's time
-  goes to them), plus shared songs. Both need at least 5 minutes of listening counted.
+  with `usuario`. The score is half shared artists (weighted by how much of each person's time
+  goes to them), 30% shared genres and 20% shared songs, so people who like the same style through
+  different artists still match. Without genre data it's 75% artists and 25% songs. Both need at least 5 minutes of listening counted.
 
 ### How stats are counted
 
