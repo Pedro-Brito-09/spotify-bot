@@ -16,7 +16,14 @@ import {
 import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
 import { saveStats, trackListening } from './stats.js';
-import { handleProfile, handleRanking, profileCommand, rankingCommand } from './statsCommands.js';
+import {
+  compatibilityCommand,
+  handleCompatibility,
+  handleProfile,
+  handleRanking,
+  profileCommand,
+  rankingCommand,
+} from './statsCommands.js';
 import { announceRestartDone, BOT_DIR, pullAndInstall, saveRestartNotice } from './update.js';
 
 // ---------- Config ----------
@@ -164,7 +171,7 @@ async function getAnnounceChannel(guild) {
 
 // Only slash commands go here; !restart is a prefix command handled in MessageCreate.
 // Registering this list also removes any old /restart left over from earlier versions.
-const COMMANDS = [listenAlongCommand, setChannelCommand, profileCommand, rankingCommand];
+const COMMANDS = [listenAlongCommand, setChannelCommand, profileCommand, rankingCommand, compatibilityCommand];
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
@@ -209,6 +216,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.commandName === 'perfil') return await handleProfile(interaction);
     if (interaction.commandName === 'ranking') return await handleRanking(interaction);
+    if (interaction.commandName === 'compatibilidade') return await handleCompatibility(interaction);
   } catch (err) {
     console.error(`Failed to handle /${interaction.commandName}:`, err);
     if (!interaction.replied) {

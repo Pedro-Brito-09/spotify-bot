@@ -1,6 +1,6 @@
 // /perfil and /ranking: show the listening stats collected by stats.js.
 import { EmbedBuilder, InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { getProfile, getRanking } from './stats.js';
+import { getCompatibility, getProfile, getRanking } from './stats.js';
 
 const SPOTIFY_GREEN = 0x1db954;
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -125,6 +125,93 @@ export async function handleRanking(interaction) {
     .setDescription(rows.map((r, i) => `${position(i)} ${line(r)}`).join('\n').slice(0, 4000))
     .setFooter({ text: 'Use /perfil para ver o seu' });
   if (kind === 'faixas' && rows[0].image) embed.setThumbnail(rows[0].image);
+
+  await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } }); // no pings
+}
+
+// ---------- /compatibilidade ----------
+
+export const compatibilityCommand = new SlashCommandBuilder()
+  .setName('compatibilidade')
+  .setDescription('Mostra o quanto o gosto musical de duas pessoas combina')
+  .setContexts(InteractionContextType.Guild)
+  .addUserOption((o) => o.setName('usuario').setDescription('Com quem comparar').setRequired(true))
+  .addUserOption((o) => o.setName('outro').setDescription('Comparar com outra pessoa em vez de você').setRequired(false));
+
+function verdict(percent) {
+  if (percent >= 90) return 'Almas gêmeas musicais 💞';
+  if (percent >= 70) return 'Combinam muito! 🔥';
+  if (percent >= 50) return 'Gostos bem parecidos 🎶';
+  if (percent >= 30) return 'Têm umas coisas em comum 🙂';
+  if (percent >= 10) return 'Gostos bem diferentes 🤔';
+  return 'Mundos opostos 🌍';
+}
+
+const bar = (percent) => {
+  const filled = Math.round(percent / 10);
+  return '🟩'.repeat(filled) + '⬛'.repeat(10 - filled);
+};
+
+export async function handleCompatibility(interaction) {
+  const userB = interaction.options.getUser('usuario');
+  const userA = interaction.options.getUser('outro') ?? interaction.user;
+
+  if (userA.id === userB.id) {
+    await interaction.reply({
+      content: 'Comparar alguém consigo mesmo dá 100%, né? 😄 Escolha outra pessoa.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const c = getCompatibility(interaction.guildId, userA.id, userB.id);
+  if (c.missing) {
+    const names = c.missing.map((id) => (id === interaction.user.id ? 'você' : `<@${id}>`));
+    await interaction.reply({
+      content:
+        `Ainda não tenho músicas suficientes de ${names.join(' e ')} para comparar ` +
+        '(preciso de pelo menos 5 minutos ouvindo Spotify com o status visível). 🎧',
+      flags: MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
+  const [nameA, nameB] = await Promise.all(
+    [userA, userB].map(async (u) => (await interaction.guild.members.fetch(u.id).catch(() => null))?.displayName ?? u.username),
+  );
+
+  let description = `<@${userA.id}> × <@${userB.id}>\n\n${bar(c.percent)} **${c.percent}%**\n${verdict(c.percent)}`;
+  if (c.sharedArtists[0]) description += `\n\nOs dois ouvem muito **${c.sharedArtists[0].name}**!`;
+
+  const embed = new EmbedBuilder()
+    .setColor(SPOTIFY_GREEN)
+    .setTitle(`💘 Compatibilidade musical: ${nameA} e ${nameB}`.slice(0, 256))
+    .setDescription(description)
+    .addFields(
+      {
+        name: '🎤 Artistas em comum',
+        value: c.sharedArtists.length
+          ? c.sharedArtists
+              .slice(0, 5)
+              .map((a, i) => `${position(i)} ${a.name} · ${formatTime(a.msA)} / ${formatTime(a.msB)}`)
+              .join('\n')
+              .slice(0, 1024)
+          : 'Nenhum ainda',
+      },
+      {
+        name: '💿 Músicas em comum',
+        value: c.sharedTracks.length
+          ? c.sharedTracks
+              .slice(0, 5)
+              .map((t, i) => `${position(i)} ${trackLabel(t)}`)
+              .join('\n')
+              .slice(0, 1024)
+          : 'Nenhuma ainda',
+      },
+    )
+    .setFooter({ text: `Tempo de ${nameA} / ${nameB} · Use /perfil para ver mais` });
+  if (c.sharedTracks[0]?.image) embed.setThumbnail(c.sharedTracks[0].image);
 
   await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } }); // no pings
 }

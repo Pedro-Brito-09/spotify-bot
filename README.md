@@ -46,6 +46,10 @@ Posts a message in a channel when a server member starts listening to Spotify, s
   in the server ranking, favourite artists and most played songs, and what they're playing now.
 - `/ranking [categoria]` shows the server's top 10: who listened the most (time), who played the
   most songs, most listened artists, or most played songs.
+- `/compatibilidade usuario:@someone [outro:@someone]` shows how well two people's music taste
+  matches (0–100%), with the artists and songs they have in common. Without `outro` it compares you
+  with `usuario`. The score is mostly shared artists (weighted by how much of each person's time
+  goes to them), plus shared songs. Both need at least 5 minutes of listening counted.
 
 ### How stats are counted
 

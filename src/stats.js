@@ -197,6 +197,56 @@ export function getProfile(guildId, userId) {
   };
 }
 
+// Below this much listening, a member's taste is too thin to compare.
+const MIN_COMPARE_MS = 5 * 60_000;
+
+/** Sum of min(shareA, shareB) over keys: 1 when both split their time the same way, 0 when nothing is shared. */
+function overlap(a, b) {
+  const totalA = Object.values(a).reduce((s, x) => s + x.ms, 0);
+  const totalB = Object.values(b).reduce((s, x) => s + x.ms, 0);
+  if (!totalA || !totalB) return 0;
+  let sum = 0;
+  for (const [k, x] of Object.entries(a)) {
+    if (b[k]) sum += Math.min(x.ms / totalA, b[k].ms / totalB);
+  }
+  return sum;
+}
+
+/**
+ * Music taste match between two members of a server.
+ * Returns { percent, sharedArtists, sharedTracks } or { missing: [userIds without enough data] }.
+ */
+export function getCompatibility(guildId, userA, userB) {
+  settleAll();
+  const g = data.guilds[guildId];
+  const a = g?.users[userA];
+  const b = g?.users[userB];
+  const missing = [[userA, a], [userB, b]].filter(([, u]) => !u || u.ms < MIN_COMPARE_MS).map(([id]) => id);
+  if (missing.length) return { missing };
+
+  // Artists say more about taste than exact songs, so they weigh more.
+  const raw = 0.75 * overlap(a.artists, b.artists) + 0.25 * overlap(a.tracks, b.tracks);
+  // Even very similar listeners rarely split their time identically; sqrt spreads the scale out.
+  const percent = Math.round(100 * Math.sqrt(raw));
+
+  const shared = (objA, objB) =>
+    Object.keys(objA)
+      .filter((k) => objB[k] && objA[k].ms > 0 && objB[k].ms > 0)
+      .map((k) => ({ key: k, a: objA[k], b: objB[k], score: Math.min(objA[k].ms, objB[k].ms) }))
+      .sort((x, y) => y.score - x.score);
+
+  return {
+    percent,
+    sharedArtists: shared(a.artists, b.artists).map(({ key, a: sa, b: sb }) => ({ name: key, msA: sa.ms, msB: sb.ms })),
+    sharedTracks: shared(a.tracks, b.tracks).map(({ key, a: sa, b: sb }) => ({
+      id: key,
+      ...g.tracks[key],
+      playsA: sa.plays,
+      playsB: sb.plays,
+    })),
+  };
+}
+
 /** kind: 'tempo' | 'musicas' (members) or 'artistas' | 'faixas' (server-wide). */
 export function getRanking(guildId, kind, n = 10) {
   settleAll();
