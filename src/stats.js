@@ -94,6 +94,7 @@ function credit(guildId, userId, session, now) {
   const u = userData(guildId, userId);
   const t = (g.tracks[session.syncId] ??= { title: session.title, artists: session.artists, ms: 0, plays: 0 });
   Object.assign(t, { title: session.title, artists: session.artists, album: session.album, image: session.image });
+  if (session.length) t.length = session.length;
 
   session.playMs += ms;
   u.ms += ms;
@@ -293,3 +294,38 @@ export function getRanking(guildId, kind, n = 10) {
   return [];
 }
 
+
+// ---------- Songs ----------
+
+/** What someone is playing right now, as the bot last saw it (or null). */
+export function getNowPlaying(guildId, userId) {
+  return sessions.get(`${guildId}:${userId}`) ?? null;
+}
+
+/** Songs this server has listened to whose title or artist contains the query, most played first. */
+export function searchTracks(guildId, query, n = 25) {
+  const g = data.guilds[guildId];
+  if (!g) return [];
+  const q = query.trim().toLowerCase();
+  return Object.entries(g.tracks)
+    .filter(([, t]) => !q || `${t.title} ${(t.artists ?? []).join(' ')}`.toLowerCase().includes(q))
+    .sort(([, a], [, b]) => b.plays - a.plays || b.ms - a.ms)
+    .slice(0, n)
+    .map(([id, t]) => ({ id, ...t }));
+}
+
+/** A song's stats in this server: totals, its place in the ranking, top listeners, who's on it now. */
+export function getTrackStats(guildId, syncId) {
+  settleAll();
+  const g = data.guilds[guildId];
+  const t = g?.tracks[syncId];
+  const listeners = Object.entries(g?.users ?? {})
+    .filter(([, u]) => u.tracks[syncId]?.ms > 0)
+    .map(([id, u]) => ({ id, ...u.tracks[syncId] }))
+    .sort((a, b) => b.plays - a.plays || b.ms - a.ms);
+  const listeningNow = [...sessions]
+    .filter(([key, s]) => key.startsWith(`${guildId}:`) && s.syncId === syncId)
+    .map(([key]) => key.split(':')[1]);
+  const rank = t?.plays ? top(g.tracks, 'plays', Infinity).findIndex(([id]) => id === syncId) + 1 : null;
+  return { track: t ? { id: syncId, ...t } : null, rank, listeners, listeningNow };
+}

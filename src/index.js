@@ -17,6 +17,7 @@ import dns from 'node:dns';
 import path from 'node:path';
 import { getChannelId, setChannelId } from './channels.js';
 import { genreLabel, genresEnabled, genresForArtists, prefetchGenres } from './genres.js';
+import { handleSong, handleSongAutocomplete, songCommand } from './songCommand.js';
 import { knownArtists, saveStats, trackListening } from './stats.js';
 import {
   compatibilityCommand,
@@ -186,7 +187,7 @@ async function getAnnounceChannel(guild) {
 
 // Only slash commands go here; !restart is a prefix command handled in MessageCreate.
 // Registering this list also removes any old /restart left over from earlier versions.
-const COMMANDS = [listenAlongCommand, setChannelCommand, profileCommand, rankingCommand, compatibilityCommand];
+const COMMANDS = [listenAlongCommand, setChannelCommand, profileCommand, rankingCommand, compatibilityCommand, songCommand];
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
@@ -229,6 +230,10 @@ client.on(Events.GuildCreate, (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    if (interaction.commandName === 'musica') await handleSongAutocomplete(interaction);
+    return;
+  }
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'listenalong') return handleListenAlong(interaction);
   if (interaction.commandName === 'setchannel') return handleSetChannel(interaction);
@@ -236,9 +241,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === 'perfil') return await handleProfile(interaction);
     if (interaction.commandName === 'ranking') return await handleRanking(interaction);
     if (interaction.commandName === 'compatibilidade') return await handleCompatibility(interaction);
+    if (interaction.commandName === 'musica') return await handleSong(interaction);
   } catch (err) {
     console.error(`Failed to handle /${interaction.commandName}:`, err);
-    if (!interaction.replied) {
+    if (interaction.deferred) await interaction.editReply({ content: 'Algo deu errado.' }).catch(() => {});
+    else if (!interaction.replied) {
       await interaction.reply({ content: 'Algo deu errado.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }

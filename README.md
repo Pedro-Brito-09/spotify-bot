@@ -57,6 +57,10 @@ Without the key everything else works the same, just without genres.
   in the server ranking, favourite artists and genres, most played songs, and what they're playing now.
 - `/ranking [categoria]` shows the server's top 10: who listened the most (time), who played the
   most songs, most listened artists, most listened genres, or most played songs.
+- `/musica` shows info about the song you're playing: artist, album, length, genres, how many times
+  the server played it, its place in the server's most played songs, its top 3 listeners, and who's
+  listening to it right now. `busca:` searches the songs the server has played (with suggestions as
+  you type) or takes a Spotify track link; `usuario:@someone` shows what someone else is playing.
 - `/compatibilidade usuario:@someone [outro:@someone]` shows how well two people's music taste
   matches (0–100%), with the artists and songs they have in common. Without `outro` it compares you
   with `usuario`. The score is half shared artists (weighted by how much of each person's time
